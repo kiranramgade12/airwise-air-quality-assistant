@@ -1,6 +1,6 @@
 import { loadConfig } from '../src/config.js';
 
-export const testConfig = loadConfig({ GEMINI_API_KEY: '', RATE_LIMIT_PER_MINUTE: '1000', UPSTREAM_TIMEOUT_MS: '500' });
+export const testConfig = loadConfig({ GEMINI_API_KEY: '', RATE_LIMIT_PER_MINUTE: '1000', UPSTREAM_TIMEOUT_MS: '500', GEMINI_TIMEOUT_MS: '500' });
 
 export const silentLogger = { warn() {}, error() {}, log() {} };
 

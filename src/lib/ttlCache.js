@@ -38,15 +38,17 @@ export class TtlCache {
   /**
    * Returns the cached value or computes, caches and returns it.
    * Concurrent callers for the same key share one in-flight promise.
+   * `shouldCache(value)` can veto caching (e.g. degraded fallback results).
    */
-  async getOrSet(key, producer) {
+  async getOrSet(key, producer, shouldCache = () => true) {
     const cached = this.get(key);
     if (cached !== undefined) return cached;
     const pending = Promise.resolve().then(producer);
     this.set(key, pending);
     try {
       const value = await pending;
-      this.set(key, value);
+      if (shouldCache(value)) this.set(key, value);
+      else this.store.delete(key);
       return value;
     } catch (error) {
       this.store.delete(key);

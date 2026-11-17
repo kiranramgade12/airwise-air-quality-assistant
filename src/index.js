@@ -9,7 +9,7 @@ const advisor = createAdvisor({ config });
 const app = createApp({ config, airService, advisor });
 
 const server = app.listen(config.port, () => {
-  console.log(`AirWise listening on :${config.port} (Gemini ${advisor.isAiEnabled ? `enabled: ${config.geminiModel}` : 'disabled – using rule-based fallback'})`);
+  console.log(`AirWise listening on :${config.port} (Gemini ${advisor.isAiEnabled ? `enabled: ${config.geminiModels.join(' → ')}` : 'disabled – using rule-based fallback'})`);
 });
 
 // Graceful shutdown for Cloud Run (SIGTERM before instance stops).

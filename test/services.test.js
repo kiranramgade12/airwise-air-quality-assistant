@@ -122,6 +122,51 @@ test('advisor falls back to rules on invalid model output or errors', async () =
   assert.equal((await throws.answer(air, sampleProfile, 'Is it safe?')).generatedBy, 'rules');
 });
 
+test('advisor times out slow model calls and uses low thinking for latency', async () => {
+  const air = summarise(samplePlace, sampleRaw);
+  let received;
+  const slow = {
+    models: {
+      generateContent: (req) => {
+        received = req;
+        return new Promise(() => {});
+      },
+    },
+  };
+  const advisor = createAdvisor({ config: testConfig, client: slow, logger: silentLogger });
+  const advice = await advisor.getAdvice(air, sampleProfile);
+  assert.equal(advice.generatedBy, 'rules');
+  assert.equal(received.config.thinkingConfig.thinkingLevel, 'LOW');
+});
+
+test('advisor fails over to the next model when one is overloaded', async () => {
+  const air = summarise(samplePlace, sampleRaw);
+  const tried = [];
+  const client = {
+    models: {
+      generateContent: async (req) => {
+        tried.push(req.model);
+        if (tried.length === 1) throw new Error('{"error":{"code":503,"status":"UNAVAILABLE"}}');
+        return { text: 'Stay in until 2pm.' };
+      },
+    },
+  };
+  const config = { ...testConfig, geminiModels: ['model-a', 'model-b', 'model-c'] };
+  const advisor = createAdvisor({ config, client, logger: silentLogger });
+  const result = await advisor.answer(air, sampleProfile, 'When can we go out?');
+  assert.deepEqual(tried, ['model-a', 'model-b']);
+  assert.equal(result.generatedBy, 'gemini');
+  assert.equal(result.model, 'model-b');
+});
+
+test('TtlCache.getOrSet respects the shouldCache veto', async () => {
+  const cache = new TtlCache({ ttlMs: 1000 });
+  await cache.getOrSet('k', async () => ({ generatedBy: 'rules' }), (v) => v.generatedBy === 'gemini');
+  assert.equal(cache.get('k'), undefined);
+  await cache.getOrSet('k', async () => ({ generatedBy: 'gemini' }), (v) => v.generatedBy === 'gemini');
+  assert.equal(cache.get('k').generatedBy, 'gemini');
+});
+
 test('advisor without an API key runs in rule-based mode', async () => {
   const advisor = createAdvisor({ config: testConfig, logger: silentLogger });
   assert.equal(advisor.isAiEnabled, false);

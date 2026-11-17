@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { buildFallbackAdvice, buildFallbackAnswer } from './fallbackAdvice.js';
 
 const LANGUAGE_NAMES = { en: 'English', hi: 'Hindi', mr: 'Marathi' };
@@ -97,35 +97,64 @@ export function buildChatPrompt(air, profile, question, language) {
 export function createAdvisor({ config, client, logger = console }) {
   const ai = client ?? (config.geminiApiKey ? new GoogleGenAI({ apiKey: config.geminiApiKey }) : null);
 
-  const withTimeout = (promise) =>
-    Promise.race([
-      promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini timeout')), config.upstreamTimeoutMs * 2).unref?.()),
-    ]);
+  const withTimeout = async (promise) => {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Gemini timeout')), config.geminiTimeoutMs);
+    });
+    try {
+      return await Promise.race([promise, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  /**
+   * Tries each configured model in order and returns the first valid result.
+   * Overloaded (503), rate-limited (429) or slow models are skipped so one busy model
+   * doesn't take the whole assistant down.
+   */
+  async function generateWithFailover(buildRequest, parse) {
+    let lastError;
+    for (const model of config.geminiModels) {
+      try {
+        const response = await withTimeout(ai.models.generateContent({ model, ...buildRequest() }));
+        return { ...parse(response), model };
+      } catch (error) {
+        lastError = error;
+        logger.warn?.(`[advisor] ${model} failed: ${String(error.message).slice(0, 160)}`);
+      }
+    }
+    throw lastError ?? new Error('No Gemini model configured');
+  }
 
   async function getAdvice(air, profile, language = 'en') {
     if (!ai) return buildFallbackAdvice(air, profile);
     try {
-      const response = await withTimeout(
-        ai.models.generateContent({
-          model: config.geminiModel,
+      const { model, ...parsed } = await generateWithFailover(
+        () => ({
           contents: buildAdvicePrompt(air, profile, language),
           config: {
             systemInstruction: SYSTEM_INSTRUCTION,
             responseMimeType: 'application/json',
             responseSchema: ADVICE_SCHEMA,
             temperature: 0.4,
-            maxOutputTokens: 2048,
+            maxOutputTokens: 4096,
+            // Low thinking keeps latency interactive; the task is grounded, not open-ended reasoning.
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           },
         }),
+        (response) => {
+          const data = JSON.parse(response.text);
+          if (!Array.isArray(data.routine) || !Array.isArray(data.indoorTips) || !Array.isArray(data.alternatives)) {
+            throw new Error('Model response missing required sections');
+          }
+          return data;
+        },
       );
-      const parsed = JSON.parse(response.text);
-      if (!Array.isArray(parsed.routine) || !Array.isArray(parsed.indoorTips) || !Array.isArray(parsed.alternatives)) {
-        throw new Error('Model response missing required sections');
-      }
-      return { ...parsed, healthAlerts: parsed.healthAlerts ?? [], generatedBy: 'gemini' };
+      return { ...parsed, healthAlerts: parsed.healthAlerts ?? [], generatedBy: 'gemini', model };
     } catch (error) {
-      logger.warn?.(`[advisor] Falling back to rules: ${error.message}`);
+      logger.warn?.(`[advisor] Falling back to rules: ${String(error.message).slice(0, 160)}`);
       return buildFallbackAdvice(air, profile);
     }
   }
@@ -133,18 +162,25 @@ export function createAdvisor({ config, client, logger = console }) {
   async function answer(air, profile, question, language = 'en') {
     if (!ai) return { answer: buildFallbackAnswer(air), generatedBy: 'rules' };
     try {
-      const response = await withTimeout(
-        ai.models.generateContent({
-          model: config.geminiModel,
+      const { text, model } = await generateWithFailover(
+        () => ({
           contents: buildChatPrompt(air, profile, question, language),
-          config: { systemInstruction: SYSTEM_INSTRUCTION, temperature: 0.5, maxOutputTokens: 512 },
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            temperature: 0.5,
+            maxOutputTokens: 1024,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          },
         }),
+        (response) => {
+          const value = (response.text ?? '').trim();
+          if (!value) throw new Error('Empty model response');
+          return { text: value };
+        },
       );
-      const text = (response.text ?? '').trim();
-      if (!text) throw new Error('Empty model response');
-      return { answer: text, generatedBy: 'gemini' };
+      return { answer: text, generatedBy: 'gemini', model };
     } catch (error) {
-      logger.warn?.(`[advisor] Chat fallback: ${error.message}`);
+      logger.warn?.(`[advisor] Chat fallback: ${String(error.message).slice(0, 160)}`);
       return { answer: buildFallbackAnswer(air), generatedBy: 'rules' };
     }
   }

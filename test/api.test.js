@@ -13,8 +13,8 @@ function buildApp({ config = testConfig, fetchImpl = fakeFetch() } = {}) {
   return createApp({ config, airService, advisor, logger: silentLogger });
 }
 
-test('GET /healthz reports status', async () => {
-  const res = await request(buildApp()).get('/healthz');
+test('GET /health reports status', async () => {
+  const res = await request(buildApp()).get('/health');
   assert.equal(res.status, 200);
   assert.deepEqual(res.body, { status: 'ok', ai: false });
 });

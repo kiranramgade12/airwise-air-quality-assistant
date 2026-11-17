@@ -38,7 +38,7 @@ Express API on Cloud Run ──► Open-Meteo Air Quality + Geocoding (CAMS data
 
 ## Where GenAI is used
 
-- **Google Gemini (`gemini-3.6-flash`, configurable through `GEMINI_MODEL`)** through the official `@google/genai` SDK:
+- **Google Gemini** through the official `@google/genai` SDK, with a model failover chain (`gemini-3.5-flash-lite` → `gemini-3.1-flash-lite` → `gemini-3.7-flash`, configurable through `GEMINI_MODEL`). If one model is overloaded, the next one is tried automatically:
   - `POST /api/advice` grounds Gemini in the live pollutant data, the forecast windows and the household profile. It uses **structured JSON output** (`responseSchema`) to produce the routine, indoor tips, swaps, health alerts and per-item impact explanations.
   - `POST /api/chat` handles grounded follow-up Q&A in the user's chosen language.
 - The project was built with AI-assisted, intent-driven development.
@@ -57,7 +57,7 @@ Express API on Cloud Run ──► Open-Meteo Air Quality + Geocoding (CAMS data
   - Responses are gzip-compressed and static assets are cached.
   - No front-end framework; the page ships with zero dependencies.
 - **Testing**
-  - 29 tests with about 99% line coverage, run with `npm test`.
+  - 32 tests with about 99% line coverage, run with `npm test`.
   - Upstream APIs and Gemini are stubbed in the tests.
   - CI runs on GitHub Actions.
 - **Accessibility**
@@ -82,7 +82,7 @@ gcloud run deploy airwise \
   --source . \
   --region asia-south1 \
   --allow-unauthenticated \
-  --set-env-vars GEMINI_MODEL=gemini-3.6-flash \
+  --set-env-vars GEMINI_MODEL=gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-3.7-flash \
   --set-secrets GEMINI_API_KEY=gemini-api-key:latest
 ```
 

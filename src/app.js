@@ -53,7 +53,7 @@ export function createApp({ config, airService, advisor, logger = console }) {
   });
   app.use('/api', apiLimiter);
 
-  app.get('/healthz', (_req, res) => res.json({ status: 'ok', ai: advisor.isAiEnabled }));
+  app.get('/health', (_req, res) => res.json({ status: 'ok', ai: advisor.isAiEnabled }));
 
   app.get('/api/air', async (req, res, next) => {
     const parsed = locationSchema.safeParse(req.query);
@@ -75,7 +75,12 @@ export function createApp({ config, airService, advisor, logger = console }) {
       const key = createHash('sha256')
         .update(JSON.stringify({ p: air.place.name, t: air.observedAt, profile, language }))
         .digest('hex');
-      const advice = await adviceCache.getOrSet(key, () => advisor.getAdvice(air, profile, language));
+      // Only cache AI plans: a rule-based fallback during a model outage should not stick around.
+      const advice = await adviceCache.getOrSet(
+        key,
+        () => advisor.getAdvice(air, profile, language),
+        (value) => value.generatedBy === 'gemini',
+      );
       return res.json({ air, advice });
     } catch (error) {
       return next(error);
