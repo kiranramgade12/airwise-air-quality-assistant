@@ -1,0 +1,29 @@
+{
+  "name": "airwise",
+  "version": "1.0.0",
+  "description": "AirWise – a Gemini-powered urban air quality assistant that suggests low-emission routines, indoor air hacks and sustainable alternatives, and explains the impact of every choice.",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test --test-reporter=spec \"test/**/*.test.js\"",
+    "test:coverage": "node --test --experimental-test-coverage \"test/**/*.test.js\""
+  },
+  "keywords": ["air-quality", "aqi", "gemini", "genai", "smog", "promptwars"],
+  "license": "MIT",
+  "dependencies": {
+    "@google/genai": "^3.4.0",
+    "compression": "^1.8.1",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.3.0",
+    "helmet": "^8.1.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.0"
+  }
+}
